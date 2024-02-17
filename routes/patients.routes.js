@@ -1,0 +1,11 @@
+const express = require("express");
+const pateintsController =require('../controllers/patients.controller');
+const patientsController = require("../controllers/patients.controller");
+const router = express.Router();
+router.get("/", pateintsController.getPatientDetais);
+router.get('/profile',pateintsController.getProfile);
+router.patch('/profile',pateintsController.updateProfile);
+router.get('/appointments/create',patientsController.getCreateAppointment);
+router.post('/appointments/create',pateintsController.createAppointment);
+router.delete('/appointments/cancel',pateintsController.cancelAppointment);
+module.exports = router;
