@@ -5,7 +5,7 @@ const Schema = mongoose.Schema;
 const userSchema = new Schema({
     name:{
         firstName: { type: String ,required: true},
-        middleName: { type: String,required: true} ,
+        middleName: { type: String,} ,
         lastName: { type: String ,required: true}
     },
     email: {
@@ -18,7 +18,8 @@ const userSchema = new Schema({
       },
       role: {
         type:String,
-      required:true
+      required:true,
+      enum:['patient','doctor','admin','labWorker','superAdmin']
       }
 },{timestamps:true});
 module.exports=mongoose.model('User',userSchema);

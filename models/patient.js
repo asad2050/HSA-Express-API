@@ -9,11 +9,9 @@ const patientSchema = new Schema({
   },
   age: {
     type: Number,
-    required: true,
   },
   sex: {
     type: String,
-    required: true,
   },
   contact: [{ type: Number }],
   appointments: [
@@ -25,11 +23,10 @@ const patientSchema = new Schema({
   tempAdress: {
    type:Schema.Types.ObjectId,
    ref:'Address',
-   required:true
   },
   permanentAdress: { 
     type:Schema.Types.ObjectId,
-    ref:'Address',
-    required:true
+    ref:'Address', 
   }
 });
+module.exports= mongoose.model('Patient',patientSchema);

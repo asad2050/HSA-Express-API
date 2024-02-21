@@ -50,14 +50,10 @@ const addressSchema = new Schema({
       type:'String',
       required:true
   },
-  streetAdress1:{
-    type:'String',
-    required:true
-  },
-  streetAdress2:{
-    type:'String',
-    required:true
-  },
+  streetAdress:[
+    {type:'String',
+    required:true},
+  ],
   postalCode:{
     type:'String',
     required:true

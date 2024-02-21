@@ -5,15 +5,13 @@ const path = require('path');
 const fs= require('fs');
 const mongoose = require('mongoose');
 const app = express();
-app.use(cors());
-app.use(bodyParser.json())
-const baseRoutes = require('./routes/base.routes');
+// app.use(cors());
+app.use(bodyParser.json());
 const authRoutes= require('./routes/auth.routes');
-const patientRoutes= require('./routes/patients.routes');
+// const patientRoutes = require('./routes/patient.routes');
 // const doctorRoutes= require('./routes/doctors.routes');
 // const adminRoutes= require('./routes/admin.routes');
 // const labRoutes= require('./routes/lab.routes');
-app.use('/api',baseRoutes);
 app.use('/api/auth',authRoutes);
 // the protectRoutesMiddleware will check
 //authentication and authorization of the user and if its authenticated then the he will receive appropriate data
@@ -26,9 +24,13 @@ app.use('/api/auth',authRoutes);
 // app.use('api/admin',adminRoutes);
 // // app.use('/api/lab-worker',protecRouteMiddleware,labRoutes);
 // app.use('api/lab-worker',labRoutes);
-app.use(function(error,req,res,next){
-res.status(500).render('500');
-});
+app.use((error, req, res, next) => {
+    console.log(error);
+    const status = error.statusCode || 500;
+    const message = error.message;
+    const data = error.data;
+    res.status(status).json({ message: message, data: data });
+  });
 mongoose.connect('mongodb://127.0.0.1:27017/hsa-api').then(function(){
     app.listen(3000);
 }).catch(err => {

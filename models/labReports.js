@@ -14,7 +14,7 @@ const testSchema= new Schema({
         required:true,
         enum :['blood','urine','x-ray','mri']//sample enums
     },
-    price:{
+    feesAmount:{
         type:Double,
         required:true
     }
