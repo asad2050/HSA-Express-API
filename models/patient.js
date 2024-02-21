@@ -13,7 +13,7 @@ const patientSchema = new Schema({
   sex: {
     type: String,
   },
-  contact: [{ type: Number }],
+  phoneNumber: { type: Number, required: true },
   appointments: [
     {
       type: Schema.Types.ObjectId, //the doctor name will be in the appointments as reference.
@@ -21,12 +21,12 @@ const patientSchema = new Schema({
     },
   ],
   tempAdress: {
-   type:Schema.Types.ObjectId,
-   ref:'Address',
+    type: Schema.Types.ObjectId,
+    ref: "Address",
   },
-  permanentAdress: { 
-    type:Schema.Types.ObjectId,
-    ref:'Address', 
-  }
+  permanentAdress: {
+    type: Schema.Types.ObjectId,
+    ref: "Address",
+  },
 });
-module.exports= mongoose.model('Patient',patientSchema);
+module.exports = mongoose.model("Patient", patientSchema);

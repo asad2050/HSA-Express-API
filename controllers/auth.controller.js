@@ -35,7 +35,8 @@ function  signupPatient(req,res,next){
         });
        return newUser.save();
      } ).then(result => {
-        const newPatient = new Patient({owner:result._id});
+      
+        const newPatient = new Patient({owner:result._id,phoneNumber:phoneNumber});
         return newPatient.save();
         
       }).then(result=>{
