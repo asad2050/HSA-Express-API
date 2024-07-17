@@ -1,7 +1,11 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
-
-const patientSchema = new Schema({
+const addressSchema= require("../models/address")
+const patientSchema = new Schema({ name:{
+  firstName: { type: String ,required: true},
+  middleName: { type: String,} ,
+  lastName: { type: String ,required: true}
+},
   owner: {
     type: Schema.Types.ObjectId,
     ref: "User",
@@ -13,20 +17,37 @@ const patientSchema = new Schema({
   sex: {
     type: String,
   },
-  phoneNumber: { type: Number, required: true },
-  appointments: [
+  height:{
+    foot:{
+      type:Number,
+    },
+    inches:{
+      type:Number
+    },
+  },
+  weight:{
+    type:Number,
+  }
+  ,
+  phoneNumber: { type: String, required: true },
+  Appointments: [
     {
       type: Schema.Types.ObjectId, //the doctor name will be in the appointments as reference.
       ref: "Appointment",
-    },
+    }
   ],
-  tempAdress: {
-    type: Schema.Types.ObjectId,
-    ref: "Address",
-  },
-  permanentAdress: {
-    type: Schema.Types.ObjectId,
-    ref: "Address",
-  },
+  // futureAppointments:[
+  //   {
+  //     type: Schema.Types.ObjectId, //the doctor name will be in the appointments as reference.
+  //     ref: "Appointment",
+  //   },
+  // ],
+  LabReports:[
+    {
+      type:Schema.Types.ObjectId,
+      ref:"LabReport"
+    }
+  ],
+  address: addressSchema
 });
 module.exports = mongoose.model("Patient", patientSchema);

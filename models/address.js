@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 const addressSchema = new Schema({
-    State: {
+    state: {
     type: "String",
     enum: [
       "Andaman and Nicobar Islands",
@@ -41,27 +41,28 @@ const addressSchema = new Schema({
       "Uttar Pradesh",
       "Uttarakhand",
       "West Bengal",
+      ""
     ]},
-  District:{
+  district:{
       type:'String',
-      required:true
+      
   },
-  City:{
+  city:{
       type:'String',
-      required:true
+      
   },
-  streetAdress:[
+  streetAddress:[
     {type:'String',
-    required:true},
+    },
   ],
   postalCode:{
     type:'String',
-    required:true
+    
   },
   landmark:{
     type:'String',
-    required:true
+    
   }
 });
 
-module.exports= mongoose.model('Address',addressSchema);
+module.exports= addressSchema

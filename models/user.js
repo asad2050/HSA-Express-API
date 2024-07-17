@@ -1,4 +1,3 @@
-const { Timestamp } = require('mongodb');
 const mongoose=require('mongoose');
 const Schema = mongoose.Schema;
 
@@ -14,12 +13,24 @@ const userSchema = new Schema({
       },
       password: {
         type: String,
-        required: true
       },
       role: {
         type:String,
       required:true,
-      enum:['patient','doctor','admin','labWorker','superAdmin']
-      }
+      enum:['patient','doctor','admin','labWorker','superAdmin','nurse','receptionist']
+      },
+      hospital:{
+        type:Schema.Types.ObjectId,
+        ref:"Hospital"
+      },
+      notifications: {
+        type: Array,
+        default: [],
+      },
+      seenNotifications: {
+        type: Array,
+        default: [],
+      },
+
 },{timestamps:true});
 module.exports=mongoose.model('User',userSchema);

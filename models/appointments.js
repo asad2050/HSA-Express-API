@@ -1,52 +1,135 @@
 const mongoose = require("mongoose");
+const addressSchema = require("./address");
 const Schema = mongoose.Schema;
 
-const appointmentSchema= new Schema({
-    patient:{
-        type: Schema.Types.ObjectId,
-        required:true
+const appointmentSchema = new Schema(
+  {
+    bookingDateTime:{
+      type:Date,
     },
-    doctor:{
-        type: Schema.Types.ObjectId,
-        required:true
+    startTime: {
+      type: String, //convert the
+      required: true,
     },
-    date:{
-        type:Date,
-        required:true
+    duration: {
+      type: Number,
+      required: true,
     },
-   slot:{
-    type:Schema.Types.ObjectId,
-    ref:'Slot',
-    required:true
-   },
-    prescriptions:[{
-    type:String,
-    required:true}],
-    testPrescribed:[{
-        type:Schema.Types.ObjectId,
-        ref:'Test'
-    }],
-    notes:{
+    status: {
+      type: String,
+      enum: ["pending", "approved", "cancelled","rescheduled"],
+      default: "pending",
+      required: true,
+    },
+    patient: {
+      type: Schema.Types.ObjectId,
+      ref: "Patient",
+      required: true,
+    },
+    patientName:{
+      type:'String'
+    },
+    doctorName:{
+      type:'String'
+    },
+    doctor: {
+      type: Schema.Types.ObjectId,
+      required: true,
+      ref: "Doctor",
+    },
+    date: {
+      type: String,
+      required: true,
+    },
+    ISTDateString: {
+      type: String,
+    },
+    symptoms:[
+      {
+        symptom:{type:String},
+        duration:{type:String}
+      }
+    ],
+    isConsultationCompleted: {
+      type: Schema.Types.Boolean,
+      required: true,
+      default: false,
+    },
+    prescriptions: [
+      {
+        drug:{
+        type: String,
+      },
+      dosage:{
         type:String
-    },fees:{
-        totalAmount:{
-        type:Number,
-        required:true
+      },
+      },
+    ],
+    testPrescribed: [
+      {
+        type: String,
+        // enum :['blood','urine','x-ray','mri']
+      },
+    ],
+    notes: {
+      type: String,
+    },
+    diagnosis:{
+      type:String,
+    },
+    yearlyAppoitmentCount: {
+      type: Number,
+    },
+    dailyAppoitmentCount: {
+      type: Number,
+    },
+    fees: {
+      totalAmount: {
+        type: Number,
+      },
+      // payment:{
+      //  method:{
+      //   type:String,
+      //   enum:['Cash','UPI',"Card"],
+      //  } ,
+      //  refAccountNumber:{
+      //   type:String
+      //  }
+      // }
+      // ,
+
+      
+      feesStructure: [
+        {
+          amount: {
+            type: Number,
+          },
+          feesType: {
+            type: String,
+            
+          },
         },
-        feesStructure:[
-           {
-           Amount:{
-            type:Number,
-            required:true
-           },
-            feesType: {
-                type:String,
-                enum:['OPD','ECG Fees','Others']  
-            }
-        }
-        ]
+      ],
+    },
+    hospitalId:{
+      type:Schema.Types.ObjectId,
+      ref:'Hospital'
+    },
+    hospitalAddress:addressSchema,
+    hospitalName: {
+      type:String
+    },
+    followUp:{
+      type:Schema.Types.ObjectId,
+      ref:"Appointment" 
     }
-},{
-    timestamps:true,
-});
-module.exports= mongoose.model('Appointment',appointmentSchema);
+  },
+  {
+    timestamps: true,
+  }
+);
+const Appointment = mongoose.model("Appointment", appointmentSchema);
+module.exports = {
+  Appointment,
+  appointmentSchema,
+};
