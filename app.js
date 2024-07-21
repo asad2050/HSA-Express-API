@@ -1,8 +1,8 @@
 const express = require('express');
 const bodyParser= require('body-parser');
 const cors = require('cors');
-const path = require('path');
-const fs= require('fs');
+// const path = require('path');
+// const fs= require('fs');
 const mongoose = require('mongoose');
 const app = express();
 require("dotenv").config();
@@ -41,6 +41,10 @@ app.use((error, req, res, next) => {
     const data = error.data;
     res.status(status).json({ message: message, data: data });
   });
+  // app.use(express.static(path.join(__dirname, 'public')));
+  // app.get('*', (req, res) => {
+  //   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  // });
   
 let mongodbUrl ='mongodb://127.0.0.1:27017/hsa-api'
 
