@@ -156,6 +156,15 @@ body("name.lastName", "The last name should not by empty")
   .isEmpty(),
   body("email", "Invalid should not be Empty").trim().escape().not().isEmpty(),
   body("email", "Invalid email").trim().escape().isEmail(),
+  body("password", "password should not be Empty")
+  .trim()
+  .escape()
+  .not()
+  .isEmpty(),
+body("password", "The minimum password length is 6 characters")
+  .trim()
+  .escape()
+  .isLength({ min: 6 }),
   body().custom((value, { req }) => {
     if (req.body.role === "admin") {
     return true

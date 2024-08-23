@@ -185,7 +185,7 @@ const createNewHospitalValidator = [
     .not()
     .isEmpty(),
 
-  body("openHours.*.startTime", "openHours start cannot be empty")
+  body("openHours.*.start", "openHours start cannot be empty")
     .trim()
     .escape()
     .not()
@@ -210,8 +210,7 @@ const createNewHospitalValidator = [
   body("address.state").trim().escape().not().isEmpty(),
   body("address.district").trim().escape().not().isEmpty(),
   body("address.city").trim().escape().not().isEmpty(),
-  body("address.streetAddess1").trim().escape(),
-  body("address.streetAddress2").trim().escape(),
+  body("address.streetAddess.*").trim().escape(),
   body("address.postalCode").trim().escape().not().isEmpty(),
   body("address.landmark").trim().escape().not().isEmpty(),
   body().custom((value, { req }) => {
@@ -219,7 +218,7 @@ const createNewHospitalValidator = [
       req.body.address.state &&
       req.body.address.district &&
       req.body.address.city &&
-      (req.body.address.streetAddress1 || req.body.address.streetAddress2) &&
+      (req.body.address.streetAddress[0] || req.body.address.streetAddress[1]) &&
       req.body.address.postalCode &&
       req.body.address.landmark
     ) {

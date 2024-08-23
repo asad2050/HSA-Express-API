@@ -1,4 +1,7 @@
 const { Hospital, Nurse, Receptionist } = require("../models/hospital");
+const mongoose = require("mongoose");
+const bcrypt = require('bcrypt');
+
 const Doctor = require("../models/doctor");
 const Patient = require("../models/patient");
 const User = require("../models/user");
@@ -416,8 +419,12 @@ async function getReceptionists(req, res, next) {
   }
 }
 
+
 async function createNewStaff(req, res, next) {
+  const session = await mongoose.startSession();
+  session.startTransaction();
   const errors = validationResult(req);
+
   try {
     if (!errors.isEmpty()) {
       const error = new Error("Validation failed.");
@@ -425,49 +432,52 @@ async function createNewStaff(req, res, next) {
       error.data = errors.array();
       throw error;
     }
-    const admin = await User.findById(req.userId);
+
+    const admin = await User.findById(req.userId).session(session);
     if (!admin) {
       const error = new Error("Could not find the admin document.");
       error.statusCode = 403;
       throw error;
     }
 
-    const hospital = await Hospital.findOne({ "staff.admins": req.userId });
+    const hospital = await Hospital.findOne({ "staff.admins": req.userId }).session(session);
     if (!hospital) {
       const error = new Error("Could not find the hospital document.");
       error.statusCode = 403;
       throw error;
     }
-    const userAlreadyExists = await User.findOne({ email: req.body.email });
+
+    const userAlreadyExists = await User.findOne({ email: req.body.email }).session(session);
     if (userAlreadyExists) {
-      const error = new Error("A user with this email alrady exists.");
+      const error = new Error("A user with this email already exists.");
       error.statusCode = 403;
       throw error;
     }
 
+    let savedStaffUserDoc;
     if (req.body.role == "admin") {
       const user = new User({
         name: req.body.name,
         email: req.body.email,
         role: "admin",
       });
-      const savedAdminUserDoc = await user.save();
-      if (!savedAdminUserDoc) {
+      savedStaffUserDoc = await user.save({ session });
+      if (!savedStaffUserDoc) {
         const error = new Error("Admin user document could not be created");
         error.statusCode = 500;
         throw error;
       }
-      hospital.staff.admins.push(savedAdminUserDoc._id);
+      hospital.staff.admins.push(savedStaffUserDoc._id);
       hospital.staff.totalAdmins = hospital.staff.totalAdmins + 1;
-      const savedHospital = await hospital.save();
+      const savedHospital = await hospital.save({ session });
       if (!savedHospital) {
-        const error = new Error(
-          "admin user document could not be saved in hospital"
-        );
+        const error = new Error("Admin user document could not be saved in hospital");
         error.statusCode = 500;
         throw error;
       }
-      res.json({ savedAdminUserDoc, sId: savedAdminUserDoc._id });
+      await session.commitTransaction();
+      session.endSession();
+      res.json({ savedStaffUserDoc, sId: savedStaffUserDoc._id });
       return;
     } else {
       const staffUser = new User({
@@ -475,12 +485,13 @@ async function createNewStaff(req, res, next) {
         email: req.body.email,
         role: req.body.role,
       });
-      const savedStaffUserDoc = await staffUser.save();
+      savedStaffUserDoc = await staffUser.save({ session });
       if (!savedStaffUserDoc) {
         const error = new Error("Staff user document could not be created");
         error.statusCode = 500;
         throw error;
       }
+
       let savedHospital;
       switch (req.body.role) {
         case "doctor":
@@ -495,7 +506,7 @@ async function createNewStaff(req, res, next) {
             stateMedicalCouncil: req.body.stateMedicalCouncil,
             registationNumber: req.body.registationNumber,
           });
-          const savedDoctorDoc = await doctor.save();
+          const savedDoctorDoc = await doctor.save({ session });
           if (!savedDoctorDoc) {
             const error = new Error("Doctor document could not be created");
             error.statusCode = 500;
@@ -503,20 +514,21 @@ async function createNewStaff(req, res, next) {
           }
           hospital.staff.doctors.push(savedDoctorDoc._id);
           hospital.staff.totalDoctors = hospital.staff.totalDoctors + 1;
-          savedHospital = await hospital.save();
+          savedHospital = await hospital.save({ session });
           if (!savedHospital) {
-            const error = new Error(
-              "doctor user document could not be saved in hospital"
-            );
+            const error = new Error("Doctor user document could not be saved in hospital");
             error.statusCode = 500;
             throw error;
           }
+          await session.commitTransaction();
+          session.endSession();
           res.json({
             savedDoctorDoc: savedDoctorDoc,
             savedStaffUserDoc,
             sId: savedDoctorDoc._id,
           });
           break;
+
         case "nurse":
           const nurse = new Nurse({
             name: req.body.name,
@@ -526,7 +538,7 @@ async function createNewStaff(req, res, next) {
             sex: req.body.sex,
             educationQualification: req.body.educationQualification,
           });
-          const savedNurseDoc = await nurse.save();
+          const savedNurseDoc = await nurse.save({ session });
           if (!savedNurseDoc) {
             const error = new Error("Nurse document could not be created");
             error.statusCode = 500;
@@ -534,20 +546,21 @@ async function createNewStaff(req, res, next) {
           }
           hospital.staff.nurses.push(savedNurseDoc._id);
           hospital.staff.totalNurse = hospital.staff.totalNurse + 1;
-          savedHospital = await hospital.save();
+          savedHospital = await hospital.save({ session });
           if (!savedHospital) {
-            const error = new Error(
-              "Nurse document could not be saved in hospital"
-            );
+            const error = new Error("Nurse document could not be saved in hospital");
             error.statusCode = 500;
             throw error;
           }
+          await session.commitTransaction();
+          session.endSession();
           res.json({
             savedNurseDoc: savedNurseDoc,
             savedStaffUserDoc,
             sId: savedNurseDoc._id,
           });
           break;
+
         case "receptionist":
           const receptionist = new Receptionist({
             name: req.body.name,
@@ -557,34 +570,33 @@ async function createNewStaff(req, res, next) {
             sex: req.body.sex,
             educationQualification: req.body.educationQualification,
           });
-          const savedReceptionistDoc = await receptionist.save();
+          const savedReceptionistDoc = await receptionist.save({ session });
           if (!savedReceptionistDoc) {
-            const error = new Error(
-              "Receptionist document could not be created"
-            );
+            const error = new Error("Receptionist document could not be created");
             error.statusCode = 500;
             throw error;
           }
           hospital.staff.receptionists.push(savedReceptionistDoc._id);
-          hospital.staff.totalReceptionists =
-            hospital.staff.totalReceptionists + 1;
-          savedHospital = await hospital.save();
+          hospital.staff.totalReceptionists = hospital.staff.totalReceptionists + 1;
+          savedHospital = await hospital.save({ session });
           if (!savedHospital) {
-            const error = new Error(
-              "Receptionists document could not be saved in hospital"
-            );
+            const error = new Error("Receptionists document could not be saved in hospital");
             error.statusCode = 500;
             throw error;
           }
+          await session.commitTransaction();
+          session.endSession();
           res.json({
             savedReceptionistDoc: savedReceptionistDoc,
             savedStaffUserDoc,
-            sId: savedNurseDoc._id,
+            sId: savedReceptionistDoc._id,
           });
           break;
       }
     }
   } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
     next(err);
   }
 }
@@ -605,9 +617,13 @@ async function createNewStaff(req, res, next) {
 // async function updateReceptionistDetails(req,res,next){
 
 // }
+
 async function updateStaffDetails(req, res, next) {
+  const session = await mongoose.startSession();
+  session.startTransaction();
   const sId = req.params.sId;
   const errors = validationResult(req);
+
   try {
     if (!errors.isEmpty()) {
       const error = new Error("Validation failed.");
@@ -615,16 +631,15 @@ async function updateStaffDetails(req, res, next) {
       error.data = errors.array();
       throw error;
     }
-    const admin = await User.findById(req.userId);
+
+    const admin = await User.findById(req.userId).session(session);
     if (!admin) {
       const error = new Error("Could not find the Admin document.");
       error.statusCode = 403;
       throw error;
     }
-    const hospital = await Hospital.findOne({
-      "staff.admins": req.userId,
-    });
 
+    const hospital = await Hospital.findOne({ "staff.admins": req.userId }).session(session);
     if (!hospital) {
       const error = new Error("Could not find the hospital document.");
       error.statusCode = 403;
@@ -635,26 +650,25 @@ async function updateStaffDetails(req, res, next) {
     let staffRole;
     let staffUserId;
 
-    const adminUser = await User.findById(sId);
+    const adminUser = await User.findById(sId).session(session);
     if (adminUser) {
       foundUser = adminUser;
       staffRole = adminUser.role;
       staffUserId = adminUser._id;
     }
-    const doctor = await Doctor.findById(sId);
+    const doctor = await Doctor.findById(sId).session(session);
     if (doctor) {
       foundUser = doctor;
       staffRole = "doctor";
       staffUserId = doctor.owner;
     }
-    const receptionist = await Receptionist.findById(sId);
+    const receptionist = await Receptionist.findById(sId).session(session);
     if (receptionist) {
       foundUser = receptionist;
       staffRole = "receptionist";
       staffUserId = receptionist.owner;
     }
-
-    const nurse = await Nurse.findById(sId);
+    const nurse = await Nurse.findById(sId).session(session);
     if (nurse) {
       foundUser = nurse;
       staffRole = "nurse";
@@ -662,173 +676,185 @@ async function updateStaffDetails(req, res, next) {
     }
 
     if (!foundUser) {
-      const error = new Error("Document with this sId doesn't exists.");
+      const error = new Error("Document with this sId doesn't exist.");
       error.statusCode = 403;
       throw error;
     }
-    const userAlreadyExists = await User.findOne({ email: req.body.email });
 
-    if (userAlreadyExists._id.toString() !== staffUserId.toString()) {
-      const error = new Error(
-        "A user with this email alrady exists try a diffrent email"
-      );
+    const userAlreadyExists = await User.findOne({ email: req.body.email }).session(session);
+    if (userAlreadyExists && userAlreadyExists._id.toString() !== staffUserId.toString()) {
+      const error = new Error("A user with this email already exists. Try a different email.");
       error.statusCode = 403;
       throw error;
     }
+
     if (hospital.chiefDoctor == foundUser._id) {
-      const error = new Error("Not authorized to update the chief doctor");
+      const error = new Error("Not authorized to update the chief doctor.");
       error.statusCode = 403;
       throw error;
     }
+
+    let updateUser, updateRoleResponse;
+    const hashedPw =await bcrypt.hash(req.body.password,12);
 
     if (staffRole == "admin") {
       if (req.userId === staffUserId) {
         return;
       }
-      const updateUser = await User.findByIdAndUpdate(staffUserId, {
+      updateUser = await User.findByIdAndUpdate(staffUserId, {
         $set: {
           name: req.body.name,
           email: req.body.email,
+          password:hashedPw
         },
-      });
+      }).session(session);
       if (!updateUser) {
-        const error = new Error("Could not update the staff User doc");
+        const error = new Error("Could not update the staff User document.");
         error.statusCode = 403;
         throw error;
       }
+      await session.commitTransaction();
+      session.endSession();
       res.json({ message: "Admin document updated successfully!" });
       return;
     } else if (staffRole == "doctor") {
-      const updateUser = await User.findByIdAndUpdate(staffUserId, {
+
+      updateUser = await User.findByIdAndUpdate(staffUserId, {
         $set: {
           name: req.body.name,
           email: req.body.email,
+          password:hashedPw
         },
-      });
+      }).session(session);
       if (!updateUser) {
-        const error = new Error("Could not update the staff User doc");
+        const error = new Error("Could not update the staff User document.");
         error.statusCode = 403;
         throw error;
       }
-      const updateDoctorResponse = await Doctor.findByIdAndUpdate(
-        foundUser._id,
-        {
-          $set: {
-            name: req.body.name,
-            phoneNumber: req.body.phoneNumber,
-            educationQualification: req.body.educationQualification,
-          },
-        }
-      );
-      if (!updateDoctorResponse) {
-        const error = new Error("Could not update the Doctor document");
-        error.statusCode = 403;
-        throw error;
-      }
-      res.json({ message: "Doctor document updated successfully!" });
-      return;
-    } else if (staffRole == "nurse") {
-      const updateUser = await User.findByIdAndUpdate(staffUserId, {
-        $set: {
-          name: req.body.name,
-          email: req.body.email,
-        },
-      });
-      if (!updateUser) {
-        const error = new Error("Could not update the staff User doc");
-        error.statusCode = 403;
-        throw error;
-      }
-      const updateNurseResponse = await Nurse.findByIdAndUpdate(foundUser._id, {
+
+      updateRoleResponse = await Doctor.findByIdAndUpdate(foundUser._id, {
         $set: {
           name: req.body.name,
           phoneNumber: req.body.phoneNumber,
           educationQualification: req.body.educationQualification,
         },
-      });
-      if (!updateNurseResponse) {
-        const error = new Error("Could not nur the Nurse document");
+      }).session(session);
+      if (!updateRoleResponse) {
+        const error = new Error("Could not update the Doctor document.");
         error.statusCode = 403;
         throw error;
       }
-      res.json({ message: "Nurse document updated successfully!" });
+      await session.commitTransaction();
+      session.endSession();
+      res.json({ message: "Doctor document updated successfully!" });
       return;
-    } else if (staffRole == "receptionist") {
-      const updateUser = await User.findByIdAndUpdate(staffUserId, {
+    } else if (staffRole == "nurse") {
+      updateUser = await User.findByIdAndUpdate(staffUserId, {
         $set: {
           name: req.body.name,
           email: req.body.email,
+          password:hashedPw
         },
-      });
+      }).session(session);
       if (!updateUser) {
-        const error = new Error("Could not update the staff User doc");
+        const error = new Error("Could not update the staff User document.");
         error.statusCode = 403;
         throw error;
       }
-      const updateReceptionistResponse = await Receptionist.findByIdAndUpdate(
-        foundUser._id,
-        {
-          $set: {
-            name: req.body.name,
-            phoneNumber: req.body.phoneNumber,
-            educationQualification: req.body.educationQualification,
-          },
-        }
-      );
-      if (!updateReceptionistResponse) {
-        const error = new Error("Could not update the Receptiionist document");
+      updateRoleResponse = await Nurse.findByIdAndUpdate(foundUser._id, {
+        $set: {
+          name: req.body.name,
+          phoneNumber: req.body.phoneNumber,
+          educationQualification: req.body.educationQualification,
+        },
+      }).session(session);
+      if (!updateRoleResponse) {
+        const error = new Error("Could not update the Nurse document.");
         error.statusCode = 403;
         throw error;
       }
+      await session.commitTransaction();
+      session.endSession();
+      res.json({ message: "Nurse document updated successfully!" });
+      return;
+    } else if (staffRole == "receptionist") {
+      updateUser = await User.findByIdAndUpdate(staffUserId, {
+        $set: {
+          name: req.body.name,
+          email: req.body.email,
+          password:hashedPw
+        },
+      }).session(session);
+      if (!updateUser) {
+        const error = new Error("Could not update the staff User document.");
+        error.statusCode = 403;
+        throw error;
+      }
+      updateRoleResponse = await Receptionist.findByIdAndUpdate(foundUser._id, {
+        $set: {
+          name: req.body.name,
+          phoneNumber: req.body.phoneNumber,
+          educationQualification: req.body.educationQualification,
+        },
+      }).session(session);
+      if (!updateRoleResponse) {
+        const error = new Error("Could not update the Receptionist document.");
+        error.statusCode = 403;
+        throw error;
+      }
+      await session.commitTransaction();
+      session.endSession();
       res.json({ message: "Receptionist document updated successfully!" });
       return;
     }
   } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
     next(err);
   }
 }
 async function deleteStaff(req, res, next) {
+  const session = await mongoose.startSession();
+  session.startTransaction();
   const sId = req.params.sId;
+  
   try {
-    const admin = await User.findById(req.userId);
+    const admin = await User.findById(req.userId).session(session);
     if (!admin) {
       const error = new Error("Could not find the Admin document.");
       error.statusCode = 403;
       throw error;
     }
-    const hospital = await Hospital.findOne({
-      "staff.admins": req.userId,
-    });
-
+    const hospital = await Hospital.findOne({ "staff.admins": req.userId }).session(session);
     if (!hospital) {
       const error = new Error("Could not find the hospital document.");
       error.statusCode = 403;
       throw error;
     }
+
     let foundUser;
     let staffRole;
     let staffUserId;
 
-    const adminUser = await User.findById(sId);
+    const adminUser = await User.findById(sId).session(session);
     if (adminUser) {
       foundUser = adminUser;
       staffRole = adminUser.role;
       staffUserId = adminUser._id;
     }
-    const doctor = await Doctor.findById(sId);
+    const doctor = await Doctor.findById(sId).session(session);
     if (doctor) {
       foundUser = doctor;
       staffRole = "doctor";
       staffUserId = doctor.owner;
     }
-    const receptionist = await Receptionist.findById(sId);
+    const receptionist = await Receptionist.findById(sId).session(session);
     if (receptionist) {
       foundUser = receptionist;
       staffRole = "receptionist";
       staffUserId = receptionist.owner;
     }
-
-    const nurse = await Nurse.findById(sId);
+    const nurse = await Nurse.findById(sId).session(session);
     if (nurse) {
       foundUser = nurse;
       staffRole = "nurse";
@@ -836,122 +862,123 @@ async function deleteStaff(req, res, next) {
     }
 
     if (!foundUser) {
-      const error = new Error("Document with this sId doesn't exists.");
+      const error = new Error("Document with this sId doesn't exist.");
       error.statusCode = 403;
       throw error;
     }
     if (hospital.chiefDoctor == foundUser._id) {
-      const error = new Error("Not authorized to delete the chief doctor");
+      const error = new Error("Not authorized to delete the chief doctor.");
       error.statusCode = 403;
       throw error;
     }
+
     let saveHospitalResponse;
     if (staffRole == "admin") {
-      const deleteUser = await User.findByIdAndDelete(staffUserId);
+      const deleteUser = await User.findByIdAndDelete(staffUserId).session(session);
       if (!deleteUser) {
-        const error = new Error("Could not delete the staff User doc");
+        const error = new Error("Could not delete the staff User document.");
         error.statusCode = 403;
         throw error;
       }
-      hospital.staff.totalAdmins = hospital.staff.totalAdmins - 1;
-      hospital.staff.admins.pop(foundUser._id);
-      saveHospitalResponse = await hospital.save();
+      hospital.staff.totalAdmins -= 1;
+      hospital.staff.admins.pull(foundUser._id);
+      saveHospitalResponse = await hospital.save({ session });
       if (!saveHospitalResponse) {
-        const error = new Error(
-          "Could not update the totalAdmins in hospital doc"
-        );
+        const error = new Error("Could not update the totalAdmins in hospital document.");
         error.statusCode = 403;
         throw error;
       }
+      await session.commitTransaction();
+      session.endSession();
       res.json({ message: "Admin document deleted successfully!" });
       return;
     } else if (staffRole == "doctor") {
-      const deleteUser = await User.findByIdAndDelete(staffUserId);
+      const deleteUser = await User.findByIdAndDelete(staffUserId).session(session);
       if (!deleteUser) {
-        const error = new Error("Could not delete the staff User doc");
+        const error = new Error("Could not delete the staff User document.");
         error.statusCode = 403;
         throw error;
       }
-      const deleteDoctorResponse = await Doctor.findByIdAndDelete(
-        foundUser._id
-      );
+      const deleteDoctorResponse = await Doctor.findByIdAndDelete(foundUser._id).session(session);
       if (!deleteDoctorResponse) {
-        const error = new Error("Could not delete the Doctor document");
+        const error = new Error("Could not delete the Doctor document.");
         error.statusCode = 403;
         throw error;
       }
-      hospital.staff.totalDoctors = hospital.staff.totalDoctors - 1;
-      hospital.staff.doctors.pop(foundUser._id);
-      saveHospitalResponse = await hospital.save();
+      hospital.staff.totalDoctors -= 1;
+      hospital.staff.doctors.pull(foundUser._id);
+      saveHospitalResponse = await hospital.save({ session });
       if (!saveHospitalResponse) {
-        const error = new Error(
-          "Could not update the totalDoctors in hospital doc"
-        );
+        const error = new Error("Could not update the totalDoctors in hospital document.");
         error.statusCode = 403;
         throw error;
       }
+      await session.commitTransaction();
+      session.endSession();
       res.json({ message: "Doctor document deleted successfully!" });
       return;
     } else if (staffRole == "nurse") {
-      const deleteUser = await User.findByIdAndDelete(staffUserId);
+      const deleteUser = await User.findByIdAndDelete(staffUserId).session(session);
       if (!deleteUser) {
-        const error = new Error("Could not delete the Nurse User doc");
+        const error = new Error("Could not delete the Nurse User document.");
         error.statusCode = 403;
         throw error;
       }
-      const deleteNurseResponse = await Nurse.findByIdAndDelete(foundUser._id);
+      const deleteNurseResponse = await Nurse.findByIdAndDelete(foundUser._id).session(session);
       if (!deleteNurseResponse) {
-        const error = new Error("Could not delete the Nurse document");
+        const error = new Error("Could not delete the Nurse document.");
         error.statusCode = 403;
         throw error;
       }
-      hospital.staff.totalNurse = hospital.staff.totalNurse - 1;
-      hospital.staff.nurses.pop(foundUser._id);
-      saveHospitalResponse = await hospital.save();
+      hospital.staff.totalNurses -= 1;
+      hospital.staff.nurses.pull(foundUser._id);
+      saveHospitalResponse = await hospital.save({ session });
       if (!saveHospitalResponse) {
-        const error = new Error(
-          "Could not update the totalNurse in hospital doc"
-        );
+        const error = new Error("Could not update the totalNurses in hospital document.");
         error.statusCode = 403;
         throw error;
       }
+      await session.commitTransaction();
+      session.endSession();
       res.json({ message: "Nurse document deleted successfully!" });
       return;
     } else if (staffRole == "receptionist") {
-      const deleteUser = await User.findByIdAndDelete(staffUserId);
+      const deleteUser = await User.findByIdAndDelete(staffUserId).session(session);
       if (!deleteUser) {
-        const error = new Error("Could not delete the Receptionist User doc");
+        const error = new Error("Could not delete the Receptionist User document.");
         error.statusCode = 403;
         throw error;
       }
-      const deleteReceptionistResponse = await Receptionist.findByIdAndDelete(
-        foundUser._id
-      );
+      const deleteReceptionistResponse = await Receptionist.findByIdAndDelete(foundUser._id).session(session);
       if (!deleteReceptionistResponse) {
-        const error = new Error("Could not delete the Receptionsit document");
+        const error = new Error("Could not delete the Receptionist document.");
         error.statusCode = 403;
         throw error;
       }
-      hospital.staff.totalReceptionists = hospital.staff.totalReceptionists - 1;
-      hospital.staff.receptionists.pop(foundUser._id);
-      saveHospitalResponse = await hospital.save();
+      hospital.staff.totalReceptionists -= 1;
+      hospital.staff.receptionists.pull(foundUser._id);
+      saveHospitalResponse = await hospital.save({ session });
       if (!saveHospitalResponse) {
-        const error = new Error(
-          "Could not update the totalReceptionists in hospital doc"
-        );
+        const error = new Error("Could not update the totalReceptionists in hospital document.");
         error.statusCode = 403;
         throw error;
       }
+      await session.commitTransaction();
+      session.endSession();
       res.json({ message: "Receptionist document deleted successfully!" });
       return;
     }
   } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
     next(err);
   }
 }
 
 async function updateStatusOne(req, res, next) {
   const errors = validationResult(req);
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
     if (!errors.isEmpty()) {
       const error = new Error("Validation failed.");
@@ -966,14 +993,14 @@ async function updateStatusOne(req, res, next) {
       throw error;
     }
 
-    const hospital = await Hospital.findOne({ "staff.admins": req.userId });
+    const hospital = await Hospital.findOne({ "staff.admins": req.userId }).session(session);
     if (!hospital) {
       const error = new Error("Could not find the hospital document.");
       error.statusCode = 403;
       throw error;
     }
     const foundDoctor = await Doctor.findById(req.params.dId)
-      .populate("owner")
+      .populate("owner").session(session)
       .exec();
 
     if (!foundDoctor) {
@@ -982,7 +1009,7 @@ async function updateStatusOne(req, res, next) {
       throw error;
     }
     const patient = await Patient.findOne({ Appointments: req.params.aId })
-      .populate("owner")
+      .populate("owner").session(session)
       .exec();
 
     if (!patient && !patient.owner) {
@@ -1003,7 +1030,8 @@ async function updateStatusOne(req, res, next) {
         date: { $gte: nowDateISODate },
         startTime: { $gt: nowDateISOTime },
       },
-      { status: req.body.status }
+      { status: req.body.status },
+      {session}
     );
 
     if (!updateAppointment || updateAppointment.modifiedCount < 1) {
@@ -1019,12 +1047,14 @@ async function updateStatusOne(req, res, next) {
       onCLickPath: "/appointmnets/" + req.params.aId,
       appointmentId: req.params.aId,
     });
-    const patientUpdateResult = await patient.owner.save();
+    const patientUpdateResult = await patient.owner.save({session});
 
     if (!patientUpdateResult) {
       error = new Error("Could not update the patient notifications");
       error.statusCode = 400;
     }
+    session.commitTransaction();
+    session.endSession();
     return res.status(200).send({
       success: true,
       error,
@@ -1032,11 +1062,15 @@ async function updateStatusOne(req, res, next) {
       updateAppointment,
     });
   } catch (err) {
+    session.abortTransaction();
+    session.endSession();
     next(err);
   }
 }
 async function updateStatusMany(req, res, next) {
   const errors = validationResult(req);
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
     if (!errors.isEmpty()) {
       const error = new Error("Validation failed.");
@@ -1044,21 +1078,21 @@ async function updateStatusMany(req, res, next) {
       error.data = errors.array();
       throw error;
     }
-    const admin = await User.findById(req.userId);
+    const admin = await User.findById(req.userId).session(session);
     if (!admin) {
       const error = new Error("Could not find the admin document.");
       error.statusCode = 403;
       throw error;
     }
 
-    const hospital = await Hospital.findOne({ "staff.admins": req.userId });
+    const hospital = await Hospital.findOne({ "staff.admins": req.userId }).session(session);
     if (!hospital) {
       const error = new Error("Could not find the hospital document.");
       error.statusCode = 403;
       throw error;
     }
     const foundDoctor = await Doctor.findById(req.params.dId)
-      .populate("owner")
+      .populate("owner").session(session)
       .exec();
     if (!foundDoctor) {
       const error = new Error("There is no doctor with this doctor Id");
@@ -1076,7 +1110,7 @@ async function updateStatusMany(req, res, next) {
 
     for (const appointment of req.body.appointments) {
       const patient = await Patient.findOne({ Appointments: appointment.aId })
-        .populate({ path: "owner", select: "-password" })
+        .populate({ path: "owner", select: "-password" }).session(session)
         .exec();
 
       if (!patient.owner) {
@@ -1091,7 +1125,7 @@ async function updateStatusMany(req, res, next) {
             date: { $gte: nowDateISODate },
             // startTime: { $gte: nowDateISOTime },
           },
-          { status: appointment.status }
+          { status: appointment.status },{session}
         );
         if (!updatedAppointment || updatedAppointment.modifiedCount < 1) {
           failedToUpdate.push({
@@ -1108,7 +1142,7 @@ async function updateStatusMany(req, res, next) {
             onCLickPath: "/appointments/" + appointment.aId,
             appointmentId: appointment.aId,
           });
-          const patientUpdateResult = await patient.owner.save();
+          const patientUpdateResult = await patient.owner.save({session});
 
           if (!patientUpdateResult) {
             failedToUpdatePatientUserDoc.push(patientUpdateResult);
@@ -1117,6 +1151,9 @@ async function updateStatusMany(req, res, next) {
       }
     }
 
+    session.commitTransaction();
+    session.endSession();
+
     return res.status(200).send({
       success: true,
       doctorId: foundDoctor._id,
@@ -1124,6 +1161,8 @@ async function updateStatusMany(req, res, next) {
       failedToUpdate,
     });
   } catch (err) {
+    session.abortTransaction();
+    session.endSession();
     next(err);
   }
 }

@@ -66,9 +66,10 @@ async function getProfile(req, res, next) {
 }
 
 async function updateProfile(req, res, next) {
-  // uploads the changes in profile using req.body and doctor model.
-  const errors = validationResult(req);
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
+    const errors = validationResult(req);
     if (!errors.isEmpty()) {
       const error = new Error("Validation failed.");
       error.statusCode = 422;
@@ -84,6 +85,7 @@ async function updateProfile(req, res, next) {
         path: "owner",
         select: "-password", // Exclude the password field
       })
+      .session(session)
       .exec();
     // const patient = await Patient.findOne({owner.req.userId}).populate({path: "owner",select: "-password" // Exclude the password field}).exec()
     if (!patient) {
@@ -94,14 +96,14 @@ async function updateProfile(req, res, next) {
 
    
 
-    const user = await User.findById(req.userId);
+    const user = await User.findById(req.userId).session(session);
     if (!user) {
       const error = new Error("Patient User document not found");
       error.statusCode = 404;
       throw error;
     }
 
-    const sameEmailUser = await User.findOne({ email: req.body.email }).exec();
+    const sameEmailUser = await User.findOne({ email: req.body.email }).session(session).exec();
 
     const isEmailUpdated = user.email !== req.body.email;
     const isSameUser = sameEmailUser._id ===user._id;
@@ -117,7 +119,7 @@ async function updateProfile(req, res, next) {
     user.name = req.body.name;
     user.email = req.body.email;
 
-    const savedUser = await user.save();
+    const savedUser = await user.save({ session: session });
 
     if (!savedUser) {
       const error = new Error("User document could not be created");
@@ -146,20 +148,24 @@ async function updateProfile(req, res, next) {
 
       patient.weight = req.body.weight||patient.weight;
 
-    const updatedDoc = await patient.save();
+    const updatedDoc = await patient.save({ session: session });
     if (!updatedDoc) {
       const error = new Error("Patient document could not be updated");
       error.statusCode = 500;
       throw error;
     }
+    await session.commitTransaction();
+    session.endSession();
     res.json({ message: "updated succesfully", patient: updatedDoc });
   } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
     next(err);
   }
 }
 async function bookAppointmentController(req, res, next) {
-  // const session = await mongoose.startSession();
-  // session.startTransaction();
+  const session = await mongoose.startSession();
+  session.startTransaction();
   const errors = validationResult(req);
   try {
     if (!errors.isEmpty()) {
@@ -168,27 +174,21 @@ async function bookAppointmentController(req, res, next) {
       error.data = errors.array();
       throw error;
     }
-    const patient = await Patient.findOne({ owner: req.userId });
+    const patient = await Patient.findOne({ owner: req.userId }).session(session);
     if (!patient) {
       const error = new Error("Patient document not found");
       error.statusCode = 404;
       throw error;
     }
-    const hospital = await Hospital.findById(req.body.hospitalId);
+    const hospital = await Hospital.findById(req.body.hospitalId).session(session);
     if (!hospital) {
-      const error = new Error(
-        "We are not able to find any hospital with this hospital Id"
-      );
+      const error = new Error("We are not able to find any hospital with this hospital Id");
       error.statusCode = 404;
       throw error;
     }
-    // const doctorList = await Doctor.find()
-    //   .where("_id")
-    //   .in(hospital.staff.doctors)
-    //   .populate("owner")
-    //   .exec();
     const foundDoctor = await Doctor.findById(req.body.dId)
       .populate("owner")
+      .session(session)
       .exec();
 
     if (!foundDoctor) {
@@ -196,16 +196,14 @@ async function bookAppointmentController(req, res, next) {
       error.statusCode = 404;
       throw error;
     }
-    const bookingDuration = foundDoctor.appointmentDuration || 10;
-    // console.log(foundDoctor);
     const bookingDate = DateTime.fromFormat(req.body.date, "yyyy-MM-dd", {
       zone: "Asia/Kolkata",
     });
-    const bookingDateTime = DateTime.fromFormat(req.body.date+' '+req.body.bookingStart,'yyyy-MM-dd HH:mm',{zone:'Asia/Kolkata'})
+    const bookingDateTime = DateTime.fromFormat(req.body.date + ' ' + req.body.bookingStart, 'yyyy-MM-dd HH:mm', {zone: 'Asia/Kolkata'})
 
     const bookingDateISO = bookingDate.toISODate();
 
-    const doctorSchedule = await Schedule.findById(req.body.scheduleId);
+    const doctorSchedule = await Schedule.findById(req.body.scheduleId).session(session);
 
     if (!doctorSchedule) {
       const error = new Error("Could not find the doctor schedule document");
@@ -213,23 +211,13 @@ async function bookAppointmentController(req, res, next) {
       throw error;
     }
     if (doctorSchedule.date !== bookingDateISO) {
-      const error = new Error(
-        "Appointment Not Available at this point, please enter a diffrent date"
-      );
+      const error = new Error("Appointment Not Available at this point, please enter a diffrent date");
       error.statusCode = 400;
       throw error;
     }
-    const bookingStartTime = DateTime.fromFormat(
-      req.body.bookingStart,
-      "HH:mm",
-      { zone: "Asia/Kolkata" }
-    );
-    const fromTimeISO = bookingStartTime
-      .minus({ minutes: 10 })
-      .toISOTime({ suppressSeconds: true });
-    const toTimeISO = bookingStartTime
-      .plus({ minutes: 10 })
-      .toISOTime({ suppressSeconds: true });
+    const bookingStartTime = DateTime.fromFormat(req.body.bookingStart, "HH:mm", { zone: "Asia/Kolkata" });
+    const fromTimeISO = bookingStartTime.minus({ minutes: bookingDuration }).toISOTime({ suppressSeconds: true });
+    const toTimeISO = bookingStartTime.plus({ minutes: bookingDuration }).toISOTime({ suppressSeconds: true });
     const existingAppointments = await Appointment.find()
       .where("_id")
       .in(doctorSchedule.appointments)
@@ -240,38 +228,25 @@ async function bookAppointmentController(req, res, next) {
           $gte: fromTimeISO,
           $lte: toTimeISO,
         },
-      });
+      })
+      .session(session);
 
     if (existingAppointments.length > 0) {
-      const error = new Error(
-        "Appointment Not Available at this point, please enter a diffrent time"
-      );
+      const error = new Error("Appointment Not Available at this point, please enter a diffrent time");
       error.statusCode = 400;
       throw error;
     }
-    let bookedAppointment;
-    const patientNameString =
-      patient.name.firstName +
-      " " +
-      patient.name.middleName +
-      " " +
-      patient.name.lastName;
-    const doctorNameString =
-      foundDoctor.name.firstName +
-      " " +
-      foundDoctor.name.middleName +
-      " " +
-      foundDoctor.name.lastName;
+    
+    const patientNameString = `${patient.name.firstName} ${patient.name.middleName} ${patient.name.lastName}`;
+    const doctorNameString = `${foundDoctor.name.firstName} ${foundDoctor.name.middleName} ${foundDoctor.name.lastName}`;
 
     const newAppointment = new Appointment({
       patientName: patientNameString,
       doctorName: doctorNameString,
       status: "pending",
       startTime: req.body.bookingStart,
-      duration: 10, //bookingDuration
+      duration: bookingDuration,
       patient: patient._id,
-      patientName:patientNameString,
-      doctorName:doctorNameString,
       doctor: foundDoctor._id,
       date: bookingDateISO,
       bookingDateTime: bookingDateTime.toJSDate(),
@@ -284,58 +259,44 @@ async function bookAppointmentController(req, res, next) {
       isConsultationCompleted: false,
       hospitalAddress: hospital.address,
       hospitalName: hospital.name,
-      hospitaId: hospital._id,
-    });
-    bookedAppointment = await newAppointment.save();
-    if (!bookedAppointment) {
-      const error = new Error("Could not book the slot");
-      error.statusCode = 400;
-      throw error;
-    }
-    // await session.commitTransaction();
-    // session.endSession();
-    doctorSchedule.appointments.push(bookedAppointment);
+      hospitalId: hospital._id,
+    }).setSession(session);
+    
+    const bookedAppointment = await newAppointment.save();
+    doctorSchedule.appointments.push(bookedAppointment._id);
     await doctorSchedule.save();
-    // if (!doctorSchedule) {
-    //   const error = new Error("Could not update doctor schedule");
-    //   error.statusCode = 400;
-    //   throw error;
-    // }
-    patient.Appointments.push(bookedAppointment);
+    patient.appointments.push(bookedAppointment._id);
     await patient.save();
-    // if (!patientDocUpdateResponse) {
-    //   const error = new Error("Could not update patient appointments");
-    //   error.statusCode = 400;
-    //   throw error;
-    // }
-    res.json({
-      bookedAppointment: bookedAppointment,
-    });
+    
+    await session.commitTransaction();
+    session.endSession();
+    
+    res.json({ bookedAppointment });
   } catch (err) {
-    // await session.abortTransaction();
-    // session.endSession();
+    await session.abortTransaction();
+    session.endSession();
     next(err);
   }
 }
 
 async function bookAvailabilityController(req, res, next) {
-  // const session = await mongoose.startSession();
-  // session.startTransaction();
-  const errors = validationResult(req);
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
+    const errors = validationResult(req);
     if (!errors.isEmpty()) {
       const error = new Error("Validation failed.");
       error.statusCode = 422;
       error.data = errors.array();
       throw error;
     }
-    const patient = await Patient.findOne({ owner: req.userId });
+    const patient = await Patient.findOne({ owner: req.userId }).session(session);
     if (!patient) {
       const error = new Error("Patient document not found");
       error.statusCode = 404;
       throw error;
     }
-    const hospital = await Hospital.findById(req.body.hospitalId);
+    const hospital = await Hospital.findById(req.body.hospitalId).session(session);
     if (!hospital) {
       const error = new Error(
         "We are not able to find any hospital with this hospital Id"
@@ -345,6 +306,7 @@ async function bookAvailabilityController(req, res, next) {
     }
     const foundDoctor = await Doctor.findById(req.body.dId)
       .populate("owner")
+      .session(session)
       .exec();
     if (!foundDoctor) {
       const error = new Error("There is no doctor with this doctor Id");
@@ -462,7 +424,7 @@ async function bookAvailabilityController(req, res, next) {
       // "shift._id": foundShiftOpen._id,
       "shift.startTime":foundShiftOpen.startTime,
       "shift.endTime":foundShiftOpen.endTime
-    });
+    }).session(session);
 
     if (!doctorSchedule) {
       // will use worker thread to create newDoctorSchedule for next 7 days and create empty slots with 15min time in between
@@ -472,7 +434,7 @@ async function bookAvailabilityController(req, res, next) {
         shift: foundShiftOpen,
       });
 
-      doctorSchedule = await newSchedule.save();
+      doctorSchedule = await newSchedule.save({ session: session });
       if (!doctorSchedule) {
         const error = new Error(
           "Could not create the doctor schedule document"
@@ -529,14 +491,15 @@ async function bookAvailabilityController(req, res, next) {
         doctorId: foundDoctor._id,
         patientId: patient._id,
       });
-    // await session.commitTransaction();
-    // session.endSession();
+    await session.commitTransaction();
+    session.endSession();
   } catch (err) {
-    // await session.abortTransaction();
-    // session.endSession();
+    await session.abortTransaction();
+    session.endSession();
     next(err);
   }
 }
+
 
 async function searchHospital(req, res, next) {
   const errors = validationResult(req);

@@ -1,5 +1,6 @@
 const { validationResult } = require("express-validator");
 const bcrypt = require("bcrypt");
+const mongoose = require('mongoose')
 const { Hospital } = require("../models/hospital");
 const User = require("../models/user");
 const Doctor = require("../models/doctor");
@@ -10,54 +11,49 @@ function getSuperAdminDashboard(req, res, next) {
   res.json({ message: "In Super Admin Routes" });
 }
 async function createNewHospital(req, res, next) {
-  // 2/3/2024
-  //first create a address and chief doctor and then pass their _id in the staffSchema object and
-  // then create a hospital object and then add the staff, and address and open hours.
-  const errors = validationResult(req);
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
+    const errors = validationResult(req);
     if (!errors.isEmpty()) {
       const error = new Error("Validation failed.");
       error.statusCode = 422;
       error.data = errors.array();
       throw error;
     }
-    // for(let shift of req.body.openHours){
-    //     console.log(typeof shift.start);
-    //     console.log(shift.start);
-    //     console.log( shift.start.split(":"));
-    //  }
+
     const hospitalAlreadyExists = await Hospital.findOne({
       name: req.body.hospitalName,
-    });
-
+    }).session(session);
     if (hospitalAlreadyExists) {
-      console.log(req.body.hospitalName);
-      const error = new Error("A hospital with this name alrady exists.");
+      const error = new Error("A hospital with this name already exists.");
       error.statusCode = 403;
       throw error;
     }
+
     const chiefDoctorAlreadyExists = await User.findOne({
       email: req.body.chiefDoctor.email,
-    });
+    }).session(session);
     if (chiefDoctorAlreadyExists) {
       const error = new Error(
-        "A user with the chief doctor's email alrady exists."
+        "A user with the chief doctor's email already exists."
       );
       error.statusCode = 403;
       throw error;
     }
+
     const user = new User({
       name: req.body.chiefDoctor.name,
       email: req.body.chiefDoctor.email,
       role: "doctor",
     });
-    const resultDoctorUserDoc = await user.save();
+    const resultDoctorUserDoc = await user.save({ session });
     if (!resultDoctorUserDoc) {
-      //server error
-      const error = new Error("doctor user document could not be created");
+      const error = new Error("Doctor user document could not be created");
       error.statusCode = 500;
       throw error;
     }
+
     const chiefDoctor = new Doctor({
       name: req.body.chiefDoctor.name,
       owner: resultDoctorUserDoc._id,
@@ -66,49 +62,25 @@ async function createNewHospital(req, res, next) {
       stateMedicalCouncil: req.body.chiefDoctor.stateMedicalCouncil,
       registationNumber: req.body.chiefDoctor.registationNumber,
     });
-    const savedDoctor = await chiefDoctor.save();
+    const savedDoctor = await chiefDoctor.save({ session });
     if (!savedDoctor) {
-      //server error
       const error = new Error("Doctor document could not be created");
       error.statusCode = 500;
       throw error;
     }
+
     const staff = {
-      totalStaff:1,
-      totalAdmins:0,
-      totalNurse:0,
-      totalReceptionist:0,
+      totalStaff: 1,
+      totalAdmins: 0,
+      totalNurse: 0,
+      totalReceptionist: 0,
       totalDoctors: 1,
       chiefDoctor: savedDoctor._id,
       doctors: [savedDoctor._id],
     };
-    // const savedStaff = await staff.save();
-    // if (!savedStaff) {
-    //   const error = new Error("Staff document could not be created");
-    //   error.statusCode = 500;
-    //   throw error;
-    // }
-    const openHours = req.body.openHours;
 
-    // let oHours = convertOpenHours(openHours);
+    const address = new mongoose.mongo.ObjectId(req.body.address._id);
 
-    const address = {
-      state: req.body.address.state,
-      district: req.body.address.district,
-      city: req.body.address.city,
-      landmark: req.body.address.landmark,
-      postalCode: req.body.address.postalCode,
-      streetAddress: [
-        req.body.address.streetAddress1,
-        req.body.address.streetAddress2,
-      ],
-    };
-    // const savedAddress = await address.save();
-    // if (!savedAddress) {
-    //   const error = new Error("Address document could not be created");
-    //   error.statusCode = 500;
-    //   throw error;
-    // }
     const hospital = new Hospital({
       name: req.body.hospitalName,
       staff: staff,
@@ -116,17 +88,18 @@ async function createNewHospital(req, res, next) {
       service: req.body.hospitalServiceType,
       email: req.body.email,
       phoneNumber: req.body.phoneNumber,
-      openHours: openHours,
-      address: address,
+      openHours: req.body.openHours,
+      address,
     });
-    const savedHospital = await hospital.save();
+    const savedHospital = await hospital.save({ session });
     if (!savedHospital) {
       const error = new Error("Hospital document could not be created");
       error.statusCode = 500;
       throw error;
     }
+
     resultDoctorUserDoc.hospital = savedHospital._id;
-    const finalDoctorUser = await resultDoctorUserDoc.save();
+    const finalDoctorUser = await resultDoctorUserDoc.save({ session });
     if (!finalDoctorUser) {
       const error = new Error(
         "Doctor document could not be updated with hospital id"
@@ -134,12 +107,18 @@ async function createNewHospital(req, res, next) {
       error.statusCode = 500;
       throw error;
     }
+
+    await session.commitTransaction();
+    session.endSession();
+
     res.json({
       message: "Hospital Created Successfully",
       savedHospital: savedHospital,
       chiefDoctor: savedDoctor,
     });
   } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
     next(err);
   }
 }
@@ -212,119 +191,109 @@ async function getHospitalById(req, res, next) {
   next(err);
 }
 }
-async function updateHospitalDetails(req,res,next){
-      const errors = validationResult(req);
-      try{
-      if(!errors.isEmpty()){
-        const error = new Error("Validation failed.");
-        error.statusCode = 422;
-        error.data = errors.array();
-        throw error;
-      }
-    
-      const hospital = await Hospital.findById(req.params.hId);
-      if(!hospital){
-        const error = new Error("Could not find the hospital");
-    error.statusCode = 403;
-    throw error;
-      }
-      // const address = await Address.findById(hospital.address);
-      // if(!address){
-      //   const error = new Error("Could not find the address document");
-      //   error.statusCode = 403;
-      //   throw error;
-      // }
-      const chiefDoctor= await Doctor.findById(hospital.staff.chiefDoctor).populate({path:'owner',select:'-password'}).exec();
-      if(!chiefDoctor){
-        const error = new Error("Could not find the chiefDoctor document");
-        error.statusCode = 403;
-        throw error;
-      }
-      // console.log(address);
-      const chiefDoctorUser= await User.findById(chiefDoctor.owner,{password:0});
-      if(!chiefDoctorUser){
-        const error = new Error("Could not find the chiefDoctor User document");
-        error.statusCode = 403;
-        throw error;
-      }
-
-      // const addressUpdateResponse = await address.save();
-      // if(!addressUpdateResponse){
-      //   const error = new Error("Hospital Address document could not be updated");
-      //   error.statusCode = 500;
-      //   throw error;
-      // }
-     
-      chiefDoctorUser.name=req.body.chiefDoctor.name;
-      chiefDoctorUser.email = req.body.chiefDoctor.email;
-      const chiefDoctorUserUpdateResponse = await chiefDoctorUser.save();
-      if(!chiefDoctorUserUpdateResponse){
-        const error = new Error("Chief Doctor User document could not be updated");
-        error.statusCode = 500;
-        throw error;
-      }
-      chiefDoctor.phoneNumber = req.body.chiefDoctor.phoneNumber;
-      chiefDoctor.educationQualification= req.body.chiefDoctor.educationQualification;
-      chiefDoctor.yearOfRegistration= req.body.chiefDoctor.yearOfRegistration;
-      chiefDoctor.stateMedicalCouncil= req.body.chiefDoctor.stateMedicalCouncil;
-      chiefDoctor.registrationNumber= req.body.chiefDoctor.registrationNumber;
-      chiefDoctor.name= req.body.chiefDoctor.name;
-      const chiefDoctorUpdateResponse = await chiefDoctor.save();
-      if(!chiefDoctorUpdateResponse){
-        const error = new Error("Chief Doctor document could not be updated");
-        error.statusCode = 500;
-        throw error;
-      }
-      hospital.name = req.body.hospitalName;
-      hospital.specialty= req.body.hospitalSpecialty;
-      hospital.service= req.body.hospitalServiceType;
-      hospital.email= req.body.email;
-      hospital.phoneNumber= req.body.phoneNumber;
-      hospital.openHours= req.body.openHours;
-      hospital.address =
-        {  state :req.body.address.state,
-          city :req.body.address.city,
-         district :req.body.address.district,
-          postalCode:req.body.address.postalCode,
-        landmark:req.body.address.landmark,
-          streetAddress :[
-            req.body.address.streetAddress1.trim() !=='' ? req.body.address.streetAddress1 : address.streetAddress[0],
-            req.body.address.streetAddress2.trim() !=='' ? req.body.address.streetAddress2 : address.streetAddress[0],
-          ],
-        };
-    const hospitalUpdateResponse = await hospital.save();
-    if(!hospitalUpdateResponse){
-      const error = new Error("Hospital document could not be updated");
-      error.statusCode = 500;
+async function updateHospitalDetails(req, res, next) {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    const hospitalId = req.params.hId;
+    const hospital = await Hospital.findById(hospitalId).session(session);
+    if (!hospital) {
+      const error = new Error("Could not find the hospital");
+      error.statusCode = 403;
       throw error;
     }
 
-    res.json({message:"Hospital details updated successfull!",hospital:hospitalUpdateResponse,chiefDoctorUser:chiefDoctorUserUpdateResponse ,chiefDoctor:chiefDoctorUpdateResponse,hId:hospital._id});
-  }catch(err){
+    const chiefDoctor = await Doctor.findById(hospital.staff.chiefDoctor)
+      .populate({
+        path: "owner",
+        select: "-password", // Exclude the password field
+      })
+      .session(session)
+      .exec();
+    if (!chiefDoctor) {
+      const error = new Error("Could not find the chiefDoctor Document");
+      error.statusCode = 403;
+      throw error;
+    }
+
+    const chiefDoctorUser = await User.findById(chiefDoctor.owner, {
+      password: 0,
+    }).session(session);
+    if (!chiefDoctorUser) {
+      const error = new Error("Could not find the chiefDoctor User document");
+      error.statusCode = 403;
+      throw error;
+    }
+
+    chiefDoctorUser.name = req.body.chiefDoctor.name;
+    chiefDoctorUser.email = req.body.chiefDoctor.email;
+    await chiefDoctorUser.save({ session });
+
+    chiefDoctor.phoneNumber = req.body.chiefDoctor.phoneNumber;
+    chiefDoctor.educationQualification = req.body.chiefDoctor.educationQualification;
+    chiefDoctor.yearOfRegistration = req.body.chiefDoctor.yearOfRegistration;
+    chiefDoctor.stateMedicalCouncil = req.body.chiefDoctor.stateMedicalCouncil;
+    chiefDoctor.registrationNumber = req.body.chiefDoctor.registrationNumber;
+    chiefDoctor.name = req.body.chiefDoctor.name;
+    await chiefDoctor.save({ session });
+
+    hospital.name = req.body.hospitalName;
+    hospital.specialty = req.body.hospitalSpecialty;
+    hospital.service = req.body.hospitalServiceType;
+    hospital.email = req.body.email;
+    hospital.phoneNumber = req.body.phoneNumber;
+    hospital.openHours = req.body.openHours;
+    hospital.address = {
+      state: req.body.address.state,
+      city: req.body.address.city,
+      district: req.body.address.district,
+      postalCode: req.body.address.postalCode,
+      landmark: req.body.address.landmark,
+      streetAddress: [
+        req.body.address.streetAddress1.trim() !== "" ? req.body.address.streetAddress1 : hospital.address.streetAddress[0],
+        req.body.address.streetAddress2.trim() !== "" ? req.body.address.streetAddress2 : hospital.address.streetAddress[1],
+      ],
+    };
+    await hospital.save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
+
+    res.json({
+      message: "Hospital details updated successfully!",
+      hospital,
+      chiefDoctorUser,
+      chiefDoctor,
+      hId: hospital._id,
+    });
+  } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
     next(err);
   }
 }
+
 async function createNewAdmin(req,res,next){
+    const hId = req.params.hId;
     // and on the website this will not be visible.
-  const hId = req.params.hId;
+    const session = await mongoose.startSession();
+  session.startTransaction();
     const errors = validationResult(req);
+    if(!errors.isEmpty()){
+      const error = new Error('Validation failed.');
+      error.statusCode = 422;
+      error.data = errors.array();
+      throw error;
+    }
     try{
-   if(!errors.isEmpty()){
-     const error = new Error('Validation failed.');
-   error.statusCode = 422;
-   error.data = errors.array();
-   throw error;
-   
-   }
   
    // input validation needs to be studied and handled.
- const userAlreadyExists = await User.findOne({email:req.body.email});
+ const userAlreadyExists = await User.findOne({email:req.body.email}).session(session);
    if(userAlreadyExists){
      const error = new Error('A user with this email alrady exists.');
      error.statusCode = 403;
      throw error;
    }
-   console.log(req.body.password);
 const hashedPw =await bcrypt.hash(req.body.password,12);
 
   const newUser = new User({
@@ -334,77 +303,28 @@ const hashedPw =await bcrypt.hash(req.body.password,12);
            role: 'admin',
        });
 
-    const savedUser = await newUser.save();
+    const savedUser = await newUser.save({session});
 
        if(!savedUser){
         const error = new Error("User document could not be created");
         error.statusCode = 500;
         throw error;
        }   
-       const hospital = await Hospital.findById(hId);
+       const hospital = await Hospital.findById(hId).session(session);
        hospital.staff.admins.push(savedUser._id);
        hospital.staff.totalAdmins=hospital.staff.admins.length;
-       const savedHospital = await hospital.save();
-       
-    // let savedDoc;
-    //  switch(result.role){
-    //   case 'admin':
-    //     break;
-    //   case 'doctor':
-    //     const newDoctor = new Doctor({
-    //       owner: result._id,
-    //       educationQualification: req.body.educationQualification,
-    //       // yearOfRegistration: req.body.yearOfRegistration,
-    //       // stateMedicalCouncil: req.body.stateMedicalCouncil,
-    //       // registationNumber: req.body.registationNumber,
-    //     });
-    //      savedDoc = await newDoctor.save();
-    //     if (!savedDoc) {
-    //       //server error
-    //       const error = new Error("Doctor document could not be created");
-    //       error.statusCode = 500;
-    //       throw error;
-    //     }
-    //     break;
-    //     case 'nurse':
-    //       const newNurse = new Nurse({
-    //         owner: result._id,
-    //         educationQualification: req.body.educationQualification,
-    //         // yearOfRegistration: req.body.yearOfRegistration,
-    //         // stateMedicalCouncil: req.body.stateMedicalCouncil,
-    //         // registationNumber: req.body.registationNumber,
-    //       });
-    //        savedDoc = await newNurse.save();
-    //       if (!savedDoc) {
-    //         //server error
-    //         const error = new Error("Nurse document could not be created");
-    //         error.statusCode = 500;
-    //         throw error;
-    //       }
-    //       break;
-    //       case 'receptionist':
-    //         const newReceptionist = new Receptionist({
-    //           owner: result._id,
-    //           educationQualification: req.body.educationQualification,
-    //           // yearOfRegistration: req.body.yearOfRegistration,
-    //           // stateMedicalCouncil: req.body.stateMedicalCouncil,
-    //           // registationNumber: req.body.registationNumber,
-    //         });
-    //         savedDoc = await newReceptionist.save();
-    //         if (!savedDoc) {
-    //           //server error
-    //           const error = new Error("Receptionist document could not be created");
-    //           error.statusCode = 500;
-    //           throw error;
-    //         }
-    //         break;
-    //  }
+       const savedHospital = await hospital.save({session});
+   await session.commitTransaction();
+    session.endSession();
 
        res.status(201).json({ message: 'User created!', userId: savedUser._id, user:savedUser,savedHospital:savedHospital});
-    }catch(err){
+    }
+    catch(err){
+    await  session.abortTransaction();
+      session.endSession();
       next(err);
     }
-   
+
 }
 async function getCreateHospitalRequests(req,res,next){
      
@@ -456,4 +376,4 @@ module.exports = {
   createNewAdmin,
   getCreateHospitalRequests,
   getCHRById
-};
+}

@@ -10,7 +10,7 @@ const Patient = require("../models/patient");
 function getDoctorDashboard(req, res, next) {
   //gets the home data such as current appointments and and today's scheduled appointments.
   //this will use the id suuplied by req.params.id
-  res.json({ message: "In Doctor Routes" });
+  res.json({ message: "Doctor Routes" });
 }
 async function getAllPatients(req, res, next) {
   const errors = validationResult(req);
@@ -175,86 +175,160 @@ async function getProfile(req, res, next) {
   }
 }
 async function updateProfile(req, res, next) {
-  // const session = await mongoose.startSession();
-  // session.startTransaction();
+  const session = await mongoose.startSession();
+  session.startTransaction();
   const errors = validationResult(req);
   try {
     if (!errors.isEmpty()) {
-      const error = new Error("Validation failed.");
-      error.statusCode = 422;
-      error.data = errors.array();
-      throw error;
+      throw new Error("Validation failed.");
     }
 
-    const doctor = await Doctor.findOne({ owner: req.userId });
+    const doctor = await Doctor.findOne({ owner: req.userId })
+      .session(session);
     if (!doctor) {
-      const error = new Error("Could not find the Doctor document.");
-      error.statusCode = 403;
-      throw error;
+      throw new Error("Could not find the Doctor document.");
     }
     const hospital = await Hospital.findOne({
       "staff.doctors": doctor._id,
-    });
+    })
+      .session(session);
 
     if (!hospital) {
-      const error = new Error("Could not find the hospital document.");
-      error.statusCode = 403;
-      throw error;
+      throw new Error("Could not find the hospital document.");
     }
 
-    doctor.address = {
-      state: req.body.address.state || "",
-      district: req.body.address.district || "",
-      city: req.body.address.city || "",
-      streetAddress: [
-        req.body.address.streetAddress1 || "",
-        req.body.address.streetAddress2 || "",
-      ],
-      postalCode: req.body.address.postalCode || "",
-      landmark: req.body.address.landmark || "",
-    };
-    doctor.name = req.body.name;
-    doctor.educationQualification = req.body.educationQualification;
-    doctor.specialty = req.body.specialty;
-    doctor.yearOfRegistration = req.body.yearOfRegistration;
-    doctor.registrationNumber = req.body.registrationNumber;
-    doctor.stateMedicalCouncil = req.body.stateMedicalCouncil;
-    doctor.age = req.body.age;
-    doctor.sex = req.body.sex;
-    doctor.shifts = req.body.shifts;
-    doctor.phoneNumber = req.body.phoneNumber;
-    doctor.appointmentDuration = req.body.appointmentDuration;
+    doctor.set({
+      address: {
+        state: req.body.address.state || "",
+        district: req.body.address.district || "",
+        city: req.body.address.city || "",
+        streetAddress: [
+          req.body.address.streetAddress1 || "",
+          req.body.address.streetAddress2 || "",
+        ],
+        postalCode: req.body.address.postalCode || "",
+        landmark: req.body.address.landmark || "",
+      },
+      name: req.body.name,
+      educationQualification: req.body.educationQualification,
+      specialty: req.body.specialty,
+      yearOfRegistration: req.body.yearOfRegistration,
+      registrationNumber: req.body.registrationNumber,
+      stateMedicalCouncil: req.body.stateMedicalCouncil,
+      age: req.body.age,
+      sex: req.body.sex,
+      shifts: req.body.shifts,
+      phoneNumber: req.body.phoneNumber,
+      appointmentDuration: req.body.appointmentDuration,
+    });
     const savedDoctorDoc = await doctor.save();
     if (!savedDoctorDoc) {
-      const error = new Error("Could not update the doctor  document.");
-      error.statusCode = 403;
-      throw error;
+      throw new Error("Could not update the doctor  document.");
     }
     const doctorUserDoc = await User.findByIdAndUpdate(doctor.owner, {
       $set: {
         name: req.body.name,
         email: req.body.email,
       },
-    });
+    })
+      .session(session);
     if (!doctorUserDoc) {
-      const error = new Error("Could not update the doctor user document.");
-      error.statusCode = 403;
-      throw error;
+      throw new Error("Could not update the doctor user document.");
     }
-    // await session.commitTransaction();
-    // session.endSession();
+    await session.commitTransaction();
+    session.endSession();
     res.json({
       message: "Doctor Profile Updated",
       doctorUser: doctorUserDoc,
       doctor: savedDoctorDoc,
     });
   } catch (err) {
-    // await session.abortTransaction();
-    // session.endSession();
+    await session.abortTransaction();
+    session.endSession();
     next(err);
   }
-  // uploads the changes in profile using req.body and doctor model.
 }
+// async function updateProfile(req, res, next) {
+//   // const session = await mongoose.startSession();
+//   // session.startTransaction();
+//   const errors = validationResult(req);
+//   try {
+//     if (!errors.isEmpty()) {
+//       const error = new Error("Validation failed.");
+//       error.statusCode = 422;
+//       error.data = errors.array();
+//       throw error;
+//     }
+
+//     const doctor = await Doctor.findOne({ owner: req.userId });
+//     if (!doctor) {
+//       const error = new Error("Could not find the Doctor document.");
+//       error.statusCode = 403;
+//       throw error;
+//     }
+//     const hospital = await Hospital.findOne({
+//       "staff.doctors": doctor._id,
+//     });
+
+//     if (!hospital) {
+//       const error = new Error("Could not find the hospital document.");
+//       error.statusCode = 403;
+//       throw error;
+//     }
+
+//     doctor.address = {
+//       state: req.body.address.state || "",
+//       district: req.body.address.district || "",
+//       city: req.body.address.city || "",
+//       streetAddress: [
+//         req.body.address.streetAddress1 || "",
+//         req.body.address.streetAddress2 || "",
+//       ],
+//       postalCode: req.body.address.postalCode || "",
+//       landmark: req.body.address.landmark || "",
+//     };
+//     doctor.name = req.body.name;
+//     doctor.educationQualification = req.body.educationQualification;
+//     doctor.specialty = req.body.specialty;
+//     doctor.yearOfRegistration = req.body.yearOfRegistration;
+//     doctor.registrationNumber = req.body.registrationNumber;
+//     doctor.stateMedicalCouncil = req.body.stateMedicalCouncil;
+//     doctor.age = req.body.age;
+//     doctor.sex = req.body.sex;
+//     doctor.shifts = req.body.shifts;
+//     doctor.phoneNumber = req.body.phoneNumber;
+//     doctor.appointmentDuration = req.body.appointmentDuration;
+//     const savedDoctorDoc = await doctor.save();
+//     if (!savedDoctorDoc) {
+//       const error = new Error("Could not update the doctor  document.");
+//       error.statusCode = 403;
+//       throw error;
+//     }
+//     const doctorUserDoc = await User.findByIdAndUpdate(doctor.owner, {
+//       $set: {
+//         name: req.body.name,
+//         email: req.body.email,
+//       },
+//     });
+//     if (!doctorUserDoc) {
+//       const error = new Error("Could not update the doctor user document.");
+//       error.statusCode = 403;
+//       throw error;
+//     }
+//     // await session.commitTransaction();
+//     // session.endSession();
+//     res.json({
+//       message: "Doctor Profile Updated",
+//       doctorUser: doctorUserDoc,
+//       doctor: savedDoctorDoc,
+//     });
+//   } catch (err) {
+//     // await session.abortTransaction();
+//     // session.endSession();
+//     next(err);
+//   }
+//   // uploads the changes in profile using req.body and doctor model.
+// }
 
 async function updateOffDays(req, res, next) {
   // any  change in schedule such as taking holidays, this must be done prior to the day which is holiday.
@@ -476,8 +550,9 @@ async function getSchedule(req, res, next) {
   }
 }
 async function completedConsultation(req, res, next) {
-  // const session = await mongoose.startSession();
-  // session.startTransaction();
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  
   const errors = validationResult(req);
   try {
     if (!errors.isEmpty()) {
@@ -486,24 +561,28 @@ async function completedConsultation(req, res, next) {
       error.data = errors.array();
       throw error;
     }
-    const doctor = await Doctor.findOne({ owner: req.userId });
+    const doctor = await Doctor.findOne({ owner: req.userId }).session(session);
+    // const doctor = await Doctor.findOne({ owner: req.userId });
     if (!doctor) {
       const error = new Error("Could not find the Doctor document.");
       error.statusCode = 403;
       throw error;
     }
-    const hospital = await Hospital.findOne({
-      "staff.doctors": doctor._id,
-    });
+    // const hospital = await Hospital.findOne({
+    //   "staff.doctors": doctor._id,
+    // });
+    const hospital = await Hospital.findOne({ "staff.doctors": doctor._id }).session(session);
 
     if (!hospital) {
       const error = new Error("Could not find the hospital document.");
       error.statusCode = 403;
       throw error;
     }
-    let doctorSchedule = await Schedule.findOne({
-      appointments: req.params.aId,
-    });
+    // let doctorSchedule = await Schedule.findOne({
+    //   appointments: req.params.aId,
+    // });
+    let doctorSchedule = await Schedule.findOne({ appointments: req.params.aId }).session(session);
+
     if (!doctorSchedule) {
       const error = new Error("Could not create the doctor schedule document");
       error.statusCode = 400;
@@ -512,12 +591,13 @@ async function completedConsultation(req, res, next) {
 
     const nowDate = DateTime.fromJSDate(new Date(), { zone: "Asia/Kolkata" });
     const nowDateISODate = nowDate.toISODate();
-    const nowDateISOTime = nowDate.toISOTime({ suppressSeconds: true });
+    const duration= doctor.appointmentDuration??10;
+    // const nowDateISOTime = nowDate.toISOTime({ suppressSeconds: true });
     const fromDateISOTime = nowDate
-      .minus({ minutes: 10 })
+      .minus({ minutes: duration })
       .toISOTime({ suppressSeconds: true })
     const toDateISOTime = nowDate
-      .plus({ minutes: 10 })
+      .plus({ minutes: duration})
       .toISOTime({ suppressSeconds: true })
     const feesObj = {
       totalAmount: req.body.feesStructure.reduce(
@@ -525,14 +605,32 @@ async function completedConsultation(req, res, next) {
       0),
       feesStructure: req.body.feesStructure,
     };
+    // const updateAppointment = await Appointment.updateOne(
+    //   {
+    //     _id: req.params.aId,
+    //     date: nowDateISODate,
+    //     status: "approved",
+
+    //     isConsultationCompleted: false,
+    //     startTime: { $lte: toDateISOTime, $gte: fromDateISOTime },
+    //   },
+    //   {
+    //     isConsultationCompleted: true,
+    //     prescriptions: req.body.prescriptions,
+    //     testPrescribed: req.body.testPrescribed,
+    //     notes: req.body.notes,
+    //     fees: feesObj,
+    //     yearlyAppoitmentCount: doctor.yearlyAppointmentCount + 1,
+    //     dailyAppoitmentCount: doctorSchedule.shiftTotalCount + 1,
+    //   }
+    // );
     const updateAppointment = await Appointment.updateOne(
       {
         _id: req.params.aId,
         date: nowDateISODate,
         status: "approved",
-
         isConsultationCompleted: false,
-        // startTime: { $lte: toDateISOTime, $gte: fromDateISOTime },
+        startTime: { $lte: toDateISOTime, $gte: fromDateISOTime },
       },
       {
         isConsultationCompleted: true,
@@ -542,7 +640,8 @@ async function completedConsultation(req, res, next) {
         fees: feesObj,
         yearlyAppoitmentCount: doctor.yearlyAppointmentCount + 1,
         dailyAppoitmentCount: doctorSchedule.shiftTotalCount + 1,
-      }
+      },
+      { session }
     );
     if (!updateAppointment) {
       const error = new Error("Could not update the appoinment.");
@@ -561,7 +660,9 @@ async function completedConsultation(req, res, next) {
     }
     const yearlyAppointmentCount = doctor.yearlyAppointmentCount + 1;
     doctor.yearlyAppointmentCount = yearlyAppointmentCount;
-    const updateYearlyCount = await doctor.save();
+    // const updateYearlyCount = await doctor.save();
+    const updateYearlyCount = await doctor.save({ session });
+
     if (!updateYearlyCount) {
       const error = new Error(
         "Could not update the yearly shift count to doctor document"
@@ -573,7 +674,9 @@ async function completedConsultation(req, res, next) {
 
     doctorSchedule.shiftTotalCount = totalShiftCount;
     doctorSchedule.totalFees += feesObj.totalAmount;
-    const updateShiftCount = await doctorSchedule.save();
+    // const updateShiftCount = await doctorSchedule.save();
+    const updateShiftCount = await doctorSchedule.save({ session });
+
     if (!updateShiftCount) {
       const error = new Error(
         "Could not update the shift count to schedule document"
@@ -581,9 +684,11 @@ async function completedConsultation(req, res, next) {
       error.statusCode = 400;
       throw error;
     }
-    const app = await Appointment.findById(req.params.aId);
-
-    const admin = await User.find({ id: hospital.staff.admins });
+    // const app = await Appointment.findById(req.params.aId);
+    // const admin = await User.find({ id: hospital.staff.admins });
+    
+    const app = await Appointment.findById(req.params.aId).session(session);
+    const admin = await User.find({ id: hospital.staff.admins }).session(session);
     const notifcations = admin.notifications;
     notifcations.push({
       type: "consultation completed",
@@ -591,12 +696,16 @@ async function completedConsultation(req, res, next) {
       onCLickPath: "/appointmnets/" + req.params.aId,
       appointmentId: req.params.aId,
     });
-    const adminUpdateResult = await admin.save();
+    // const adminUpdateResult = await admin.save();
+    const adminUpdateResult = await admin.save({ session });
+
     let isAdminNotified;
     if (!adminUpdateResult) {
       isAdminNotified = false;
     }
     isAdminNotified = true;
+    await session.commitTransaction();
+    session.endSession();
 
     return res.status(200).send({
       success: true,
@@ -604,6 +713,8 @@ async function completedConsultation(req, res, next) {
       isAdminNotified: isAdminNotified,
     });
   } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
     next(err);
   }
 }

@@ -2,6 +2,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const User = require('../models/user');
 const Patient = require("../models/patient");
+const mongoose =require("mongoose");
 const {validationResult} = require('express-validator');
 const nodemailer = require("nodemailer");
 const transporter = nodemailer.createTransport({
@@ -36,32 +37,40 @@ async function  signupPatient(req,res,next){
   }catch(err){
     next(err);
   }
- bcrypt.hash(req.body.password,12).then(hashedPw=>{
-        const newUser = new User({
-            name: {
-                firstName: req.body.firstName,
-                middleName: req.body.middleName,
-                lastName: req.body.lastName
-            },
-            email: req.body.email,
-            password: hashedPw,
-            role: 'patient'
-        });
-       return newUser.save();
-     } ).then(result => {
-        const newPatient = new Patient({owner:result._id,phoneNumber:req.body.phoneNumber,name:result.name});
-        return newPatient.save();
-        
-      }).then(result=>{
-        res.status(201).json({ message: 'User created!', patientId: result._id ,userId: result.owner });
-      })
-      .catch(err => {
-        if (!err.statusCode) {
-          err.statusCode = 500;
-        }
-        next(err);
-      });
-    
+  const sess = await mongoose.startSession();
+  sess.startTransaction();
+  try {
+    const hashedPw = await bcrypt.hash(req.body.password, 12);
+    const newUser = new User({
+      name: {
+        firstName: req.body.firstName,
+        middleName: req.body.middleName,
+        lastName: req.body.lastName
+      },
+      email: req.body.email,
+      password: hashedPw,
+      role: 'patient'
+    });
+
+    const savedUser = await newUser.save({ session: sess });
+    const newPatient = new Patient({ owner: savedUser._id, phoneNumber: req.body.phoneNumber, name: savedUser.name });
+    await newPatient.save({ session: sess });
+    if(!newPatient){
+      const error = new Error('Could not create patient');
+      error.statusCode = 500;
+      throw error;
+    }
+    await sess.commitTransaction();
+    res.status(201).json({ message: 'User created!', patientId: newPatient._id, userId: savedUser._id });
+  } catch (err) {
+    await sess.abortTransaction();
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  } finally {
+    sess.endSession();
+  }
 }
 async function login(req,res,next){
        // logic for authenticating user and then loading user's appropriate dashboard
