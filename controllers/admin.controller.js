@@ -1357,6 +1357,9 @@ async function updateDoctorOffDays(req, res, next) {
 }
 async function createPastAppointment(req, res, next) {
   const errors = validationResult(req);
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     if (!errors.isEmpty()) {
       const error = new Error("Validation failed.");
@@ -1364,14 +1367,17 @@ async function createPastAppointment(req, res, next) {
       error.data = errors.array();
       throw error;
     }
+
     const patient = await Patient.findOne({ owner: req.params.pId })
       .populate({ path: "owner", select: "-password" })
       .exec();
+
     if (!patient) {
       const error = new Error("Patient document not found");
       error.statusCode = 404;
       throw error;
     }
+
     const hospital = await Hospital.findById(req.body.hospitalId);
     if (!hospital) {
       const error = new Error(
@@ -1390,28 +1396,31 @@ async function createPastAppointment(req, res, next) {
       error.statusCode = 404;
       throw error;
     }
+
     const bookingDuration = foundDoctor.appointmentDuration || 10;
     const bookingDate = DateTime.fromFormat(req.body.date, "yyyy-MM-dd", {
       zone: "Asia/Kolkata",
     });
     const bookingDateISO = bookingDate.toISODate();
 
-    const doctorSchedule = await Schedule.findById(req.body.scheduleId);
+    let doctorSchedule = await Schedule.findById(req.body.scheduleId);
 
-    // if (!doctorSchedule) {
-    // const newSchedule = new Schedule({
-    //   doctorId: foundDoctor._id,
-    //   date: bookingDateISO,
-    //   shift: foundShiftOpen,
-    // });
-
-    // doctorSchedule = await newSchedule.save();
     if (!doctorSchedule) {
-      const error = new Error("Could not create the doctor schedule document");
-      error.statusCode = 400;
-      throw error;
-      // }
+      const newSchedule = new Schedule({
+        doctorId: foundDoctor._id,
+        date: bookingDateISO,
+        shift: req.body.shift, // Assuming foundShiftOpen is intended here
+      });
+
+      doctorSchedule = await newSchedule.save({ session });
+
+      if (!doctorSchedule) {
+        const error = new Error("Could not create the doctor schedule document");
+        error.statusCode = 400;
+        throw error;
+      }
     }
+
     const bookingDateTime = DateTime.fromFormat(
       req.body.date + " " + req.body.bookingStart,
       "yyyy-MM-dd HH:mm",
@@ -1428,6 +1437,7 @@ async function createPastAppointment(req, res, next) {
     const toTimeISO = bookingStartTime
       .plus({ minutes: 10 })
       .toISOTime({ suppressSeconds: true });
+
     const existingAppointments = await Appointment.find()
       .where("_id")
       .in(doctorSchedule.appointments)
@@ -1439,12 +1449,13 @@ async function createPastAppointment(req, res, next) {
           $lte: toTimeISO,
         },
       });
+
     if (existingAppointments.length > 0) {
-      const error = new Error("appointment already exist at this time");
+      const error = new Error("Appointment already exists at this time");
       error.statusCode = 400;
       throw error;
     }
-    let bookedAppointment;
+
     const newAppointment = new Appointment({
       status: "approved",
       isConsultaionCompleted: true,
@@ -1454,7 +1465,7 @@ async function createPastAppointment(req, res, next) {
       fees: req.body.fees,
       startTime: req.body.bookingStart,
       bookingDateTime: bookingDateTime,
-      duration: 10, //bookingDuration
+      duration: bookingDuration,
       patient: patient._id,
       doctor: foundDoctor._id,
       date: bookingDateISO,
@@ -1466,27 +1477,32 @@ async function createPastAppointment(req, res, next) {
       }),
       isConsultationCompleted: false,
     });
-    bookedAppointment = await newAppointment.save();
+
+    const bookedAppointment = await newAppointment.save({ session });
+
     if (!bookedAppointment) {
       const error = new Error("Could not book the slot");
       error.statusCode = 400;
       throw error;
     }
-    // await session.commitTransaction();
-    // session.endSession();
-    doctorSchedule.appointments.push(bookedAppointment._id);
-    await doctorSchedule.save();
 
-    patient.Appointments.push(bookedAppointment);
-    await patient.save();
+    doctorSchedule.appointments.push(bookedAppointment._id);
+    await doctorSchedule.save({ session });
+
+    patient.appointments.push(bookedAppointment);
+    await patient.save({ session });
+
     const notifications = patient.owner.notifications;
     notifications.push({
       type: "status-updated",
-      message: `your appointment has been consulted`,
-      onCLickPath: "/appointments/" + req.params.aId,
-      appointemntId: updatedAppointment._id,
+      message: `Your appointment has been consulted`,
+      onClickPath: "/appointments/" + bookedAppointment._id,
+      appointmentId: bookedAppointment._id,
     });
-    await patient.owner.save();
+    await patient.owner.save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
 
     res.json({
       doctorSchedule,
@@ -1494,12 +1510,14 @@ async function createPastAppointment(req, res, next) {
       bookedAppointment: bookedAppointment,
       patient: patient,
     });
+
   } catch (err) {
-    // await session.abortTransaction();
-    // session.endSession();
+    await session.abortTransaction();
+    session.endSession();
     next(err);
   }
-} // for inserting dummy data
+}
+
 
 async function getAllAppointmentOfPatient(req, res, next) {
   const errors = validationResult(req);
