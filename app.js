@@ -6,7 +6,11 @@ const path = require('path');
 const mongoose = require("mongoose");
 const app = express();
 require("dotenv").config();
-app.use(cors());
+app.use(cors({
+  origin:process.env.CLIENT_URL,
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']}
+));
 app.use(bodyParser.json());
 const authRoutes = require("./routes/auth.routes");
 const isAuthMiddleware = require("./middlewares/isAuth");
