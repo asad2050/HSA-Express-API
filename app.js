@@ -53,11 +53,11 @@ app.use((error, req, res, next) => {
 
 
 let mongodbUrl = process.env.MONGODB_URL;
-
+let PORT = process.env.PORT || 3000;
 mongoose
   .connect(mongodbUrl)
   .then(function () {
-    app.listen(3000);
+    app.listen(PORT);
   })
   .catch((err) => {
     console.log(err);
